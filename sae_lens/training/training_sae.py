@@ -109,6 +109,7 @@ class TrainStepOutput:
 class TrainingSAEConfig(SAEConfig):
     # Sparsity Loss Calculations
     l1_coefficient: float
+    aux_coefficient: float
     lp_norm: float
     use_ghost_grads: bool
     normalize_sae_decoder: bool
@@ -147,6 +148,7 @@ class TrainingSAEConfig(SAEConfig):
             seqpos_slice=cfg.seqpos_slice,
             # Training cfg
             l1_coefficient=cfg.l1_coefficient,
+            aux_coefficient=cfg.aux_coefficient,
             lp_norm=cfg.lp_norm,
             use_ghost_grads=cfg.use_ghost_grads,
             normalize_sae_decoder=cfg.normalize_sae_decoder,
@@ -189,6 +191,7 @@ class TrainingSAEConfig(SAEConfig):
         return {
             **super().to_dict(),
             "l1_coefficient": self.l1_coefficient,
+            "aux_coefficient": self.aux_coefficient,
             "lp_norm": self.lp_norm,
             "use_ghost_grads": self.use_ghost_grads,
             "normalize_sae_decoder": self.normalize_sae_decoder,
@@ -414,7 +417,7 @@ class TrainingSAE(SAE):
             loss = mse_loss + l0_loss
             losses["l0_loss"] = l0_loss
         elif self.cfg.architecture == "topk":
-            topk_loss = self.calculate_topk_aux_loss(
+            topk_loss = self.cfg.aux_coefficient * self.calculate_topk_aux_loss(
                 sae_in=sae_in,
                 sae_out=sae_out,
                 hidden_pre=hidden_pre,
