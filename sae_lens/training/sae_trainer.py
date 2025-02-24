@@ -296,14 +296,16 @@ class SAETrainer:
 
         per_token_l2_loss = (sae_out - sae_in).pow(2).sum(dim=-1).squeeze()
         total_variance = (sae_in - sae_in.mean(0)).pow(2).sum(-1)
-        explained_variance = 1 - per_token_l2_loss / total_variance
+        explained_variance_old = 1 - per_token_l2_loss / total_variance
+        explained_variance = 1 - per_token_l2_loss.mean() / total_variance.mean()
 
         log_dict = {
             # losses
             "losses/overall_loss": loss,
             # variance explained
-            "metrics/explained_variance": explained_variance.mean().item(),
-            "metrics/explained_variance_std": explained_variance.std().item(),
+            "metrics/explained_variance": explained_variance.item(),
+            "metrics/explained_variance_old": explained_variance_old.mean().item(),
+            "metrics/explained_variance_old_std": explained_variance_old.std().item(),
             "metrics/l0": l0.item(),
             # sparsity
             "sparsity/mean_passes_since_fired": self.n_forward_passes_since_fired.mean().item(),

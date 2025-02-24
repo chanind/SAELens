@@ -390,7 +390,9 @@ def get_sparsity_and_variance_metrics(
         metric_dict["l0"] = []
         metric_dict["l1"] = []
     if compute_variance_metrics:
-        metric_dict["explained_variance"] = []
+        metric_dict["explained_variance_old"] = []
+        metric_dict["resid_sum_of_squares"] = []
+        metric_dict["total_sum_of_squares"] = []
         metric_dict["mse"] = []
         metric_dict["cossim"] = []
     if compute_featurewise_density_statistics:
@@ -507,10 +509,11 @@ def get_sparsity_and_variance_metrics(
             )
             cossim = (x_normed * x_hat_normed).sum(dim=-1)
 
-            metric_dict["explained_variance"].append(explained_variance)
+            metric_dict["resid_sum_of_squares"].append(resid_sum_of_squares)
+            metric_dict["total_sum_of_squares"].append(total_sum_of_squares)
+            metric_dict["explained_variance_old"].append(explained_variance)
             metric_dict["mse"].append(mse)
             metric_dict["cossim"].append(cossim)
-
         if compute_featurewise_density_statistics:
             sae_feature_activations_bool = (flattened_sae_feature_acts > 0).float()
             total_feature_acts += sae_feature_activations_bool.sum(dim=1).sum(dim=0)
@@ -530,6 +533,11 @@ def get_sparsity_and_variance_metrics(
     feature_metrics["consistent_activation_heuristic"] = (
         total_feature_acts / total_feature_prompts
     ).tolist()
+
+    if compute_variance_metrics:
+        metrics["explained_variance"] = (
+            1 - metrics["resid_sum_of_squares"] / metrics["total_sum_of_squares"]
+        )
 
     return metrics, feature_metrics
 
