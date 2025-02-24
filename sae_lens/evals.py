@@ -444,32 +444,21 @@ def get_sparsity_and_variance_metrics(
         if activation_store.normalize_activations == "expected_average_only_in":
             original_act = activation_store.apply_norm_scaling_factor(original_act)
 
+        flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
+        flattened_sae_input = flattened_sae_input[
+            flattened_mask.to(flattened_sae_input.device)
+        ]
+
         # send the (maybe normalised) activations into the SAE
-        sae_feature_activations = sae.encode(original_act.to(sae.device))
-        sae_out = sae.decode(sae_feature_activations).to(original_act.device)
+        sae_feature_activations = sae.encode(flattened_sae_input.to(sae.device))
+        sae_out = sae.decode(sae_feature_activations).to(flattened_sae_input.device)
         del cache
 
         if activation_store.normalize_activations == "expected_average_only_in":
             sae_out = activation_store.unscale(sae_out)
 
-        flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
-        flattened_sae_feature_acts = einops.rearrange(
-            sae_feature_activations, "b ctx d -> (b ctx) d"
-        )
-        flattened_sae_out = einops.rearrange(sae_out, "b ctx d -> (b ctx) d")
-
-        # TODO: Clean this up.
-        # apply mask
-        masked_sae_feature_activations = sae_feature_activations * mask.unsqueeze(-1)
-        flattened_sae_input = flattened_sae_input[
-            flattened_mask.to(flattened_sae_input.device)
-        ]
-        flattened_sae_feature_acts = flattened_sae_feature_acts[
-            flattened_mask.to(flattened_sae_feature_acts.device)
-        ]
-        flattened_sae_out = flattened_sae_out[
-            flattened_mask.to(flattened_sae_out.device)
-        ]
+        flattened_sae_feature_acts = sae_feature_activations
+        flattened_sae_out = sae_out
 
         if compute_l2_norms:
             l2_norm_in = torch.norm(flattened_sae_input, dim=-1)
@@ -523,7 +512,7 @@ def get_sparsity_and_variance_metrics(
             metric_dict["cossim"].append(cossim)
 
         if compute_featurewise_density_statistics:
-            sae_feature_activations_bool = (masked_sae_feature_activations > 0).float()
+            sae_feature_activations_bool = (flattened_sae_feature_acts > 0).float()
             total_feature_acts += sae_feature_activations_bool.sum(dim=1).sum(dim=0)
             total_feature_prompts += (sae_feature_activations_bool.sum(dim=1) > 0).sum(
                 dim=0
