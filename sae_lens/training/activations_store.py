@@ -14,7 +14,7 @@ from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 from jaxtyping import Float, Int
 from requests import HTTPError
-from safetensors.torch import save_file
+from safetensors.torch import load_file, save_file
 from tqdm.auto import tqdm
 from transformer_lens.hook_points import HookedRootModule
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
@@ -335,6 +335,7 @@ class ActivationsStore:
             if len(tokens.shape) != 1:
                 raise ValueError(f"tokens.shape should be 1D but was {tokens.shape}")
             yield tokens
+            self.n_dataset_processed += 1
 
     def _iterate_tokenized_sequences(self) -> Generator[torch.Tensor, None, None]:
         """
@@ -741,6 +742,7 @@ class ActivationsStore:
         result = {
             "n_dataset_processed": torch.tensor(self.n_dataset_processed),
         }
+
         if self.estimated_norm_scaling_factor is not None:
             result["estimated_norm_scaling_factor"] = torch.tensor(
                 self.estimated_norm_scaling_factor
@@ -750,6 +752,47 @@ class ActivationsStore:
     def save(self, file_path: str):
         """save the state dict to a file in safetensors format"""
         save_file(self.state_dict(), file_path)
+
+    def load(self, file_path: str):
+        """Load the state dict from a file in safetensors format"""
+
+        state_dict = load_file(file_path)
+
+        if "n_dataset_processed" in state_dict:
+            target_n_dataset_processed = state_dict["n_dataset_processed"].item()
+
+            # Only fast-forward if needed
+
+            if target_n_dataset_processed > self.n_dataset_processed:
+                logger.info(
+                    "Fast-forwarding through dataset samples to match checkpoint position"
+                )
+                samples_to_skip = target_n_dataset_processed - self.n_dataset_processed
+
+                pbar = tqdm(
+                    total=samples_to_skip,
+                    desc="Fast-forwarding through dataset",
+                    leave=False,
+                )
+                while target_n_dataset_processed > self.n_dataset_processed:
+                    start = self.n_dataset_processed
+                    try:
+                        # Just consume and ignore the values to fast-forward
+                        next(self.iterable_sequences)
+                    except StopIteration:
+                        logger.warning(
+                            "Dataset exhausted during fast-forward. Resetting dataset."
+                        )
+                        self.iterable_sequences = self._iterate_tokenized_sequences()
+                    pbar.update(self.n_dataset_processed - start)
+                pbar.close()
+        if "estimated_norm_scaling_factor" in state_dict:
+            self.estimated_norm_scaling_factor = state_dict[
+                "estimated_norm_scaling_factor"
+            ].item()
+            logger.info(
+                f"Restored activation norm scaling factor: {self.estimated_norm_scaling_factor}"
+            )
 
 
 def validate_pretokenized_dataset_tokenizer(

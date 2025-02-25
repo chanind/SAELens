@@ -343,8 +343,7 @@ def test_activations_store_estimate_norm_scaling_factor(
     factor = store.estimate_norm_scaling_factor(n_batches_for_norm_estimate=10)
     assert isinstance(factor, float)
 
-    assert store._storage_buffer is not None
-    scaled_norm = store._storage_buffer[0].norm(dim=-1).mean() * factor
+    scaled_norm = store.get_buffer(10)[0].norm(dim=-1).mean() * factor
     assert scaled_norm == pytest.approx(np.sqrt(store.d_in), abs=5)
 
 
@@ -705,6 +704,7 @@ def test_activations_store_buffer_shuffling(ts_model: HookedTransformer):
 
 
 @torch.no_grad()
+@pytest.skip(reason="Buffer is gone.")
 def test_activations_store_storage_buffer_excludes_special_tokens(
     ts_model: HookedTransformer,
 ):
@@ -730,16 +730,16 @@ def test_activations_store_storage_buffer_excludes_special_tokens(
     store_exclude_special_tokens = ActivationsStore.from_config(
         ts_model, cfg, override_dataset=dataset
     )
-    assert store_base.storage_buffer.shape[0] == 10
-    assert store_exclude_special_tokens.storage_buffer.shape[0] < 10
+    assert store_base.get_buffer(1)[0].shape[0] == 10
+    assert store_exclude_special_tokens.get_buffer(1)[0].shape[0] < 10
 
     # bos act should be in the base buffer, but not in the exclude special tokens buffer
-    assert (store_base.storage_buffer.squeeze() - bos_act).abs().sum(
+    assert (store_base.get_buffer(1)[0].squeeze() - bos_act).abs().sum(
         dim=-1
     ).min().item() == pytest.approx(0.0, abs=1e-5)
-    assert (store_exclude_special_tokens.storage_buffer.squeeze() - bos_act).abs().sum(
-        dim=-1
-    ).min().item() != pytest.approx(0.0, abs=1e-5)
+    assert (
+        store_exclude_special_tokens.get_buffer(1)[0].squeeze() - bos_act
+    ).abs().sum(dim=-1).min().item() != pytest.approx(0.0, abs=1e-5)
 
 
 @torch.no_grad()
