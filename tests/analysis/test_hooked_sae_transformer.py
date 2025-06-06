@@ -77,6 +77,8 @@ def get_hooked_sae(model: HookedTransformer, act_name: str) -> SAE:
         finetuning_scaling_factor=False,
         sae_lens_training_version=None,
         normalize_activations="none",
+        matching_pursuit_maxk=10,
+        matching_pursuit_threshold=1e-3,
     )
 
     return SAE(sae_cfg)  # type: ignore

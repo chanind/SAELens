@@ -156,7 +156,9 @@ class LanguageModelSAERunnerConfig:
     )
 
     # SAE Parameters
-    architecture: Literal["standard", "gated", "jumprelu", "topk"] = "standard"
+    architecture: Literal[
+        "standard", "gated", "jumprelu", "topk", "matching_pursuit"
+    ] = "standard"
     d_in: int = 512
     d_sae: Optional[int] = None
     b_dec_init_method: str = "geometric_median"
@@ -191,6 +193,10 @@ class LanguageModelSAERunnerConfig:
     # JumpReLU Parameters
     jumprelu_init_threshold: float = 0.001
     jumprelu_bandwidth: float = 0.001
+
+    # Matching Pursuit Parameters
+    matching_pursuit_maxk: int = 100
+    matching_pursuit_threshold: float = 5e-2
 
     # Performance - see compilation section of lm_runner.py for info
     autocast: bool = False  # autocast to autocast_dtype during training
@@ -453,6 +459,8 @@ class LanguageModelSAERunnerConfig:
             "activation_fn_kwargs": self.activation_fn_kwargs,
             "model_from_pretrained_kwargs": self.model_from_pretrained_kwargs,
             "seqpos_slice": self.seqpos_slice,
+            "matching_pursuit_maxk": self.matching_pursuit_maxk,
+            "matching_pursuit_threshold": self.matching_pursuit_threshold,
         }
 
     def get_training_sae_cfg_dict(self) -> dict[str, Any]:

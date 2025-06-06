@@ -42,6 +42,8 @@ class LanguageModelSAERunnerConfigDict(TypedDict, total=False):
     dtype: str
     prepend_bos: bool
     normalize_activations: str
+    matching_pursuit_maxk: int
+    matching_pursuit_threshold: float
 
 
 def build_sae_cfg(**kwargs: Any) -> LanguageModelSAERunnerConfig:
@@ -79,6 +81,8 @@ def build_sae_cfg(**kwargs: Any) -> LanguageModelSAERunnerConfig:
         "dtype": "float32",
         "prepend_bos": True,
         "normalize_activations": "none",
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     for key, value in kwargs.items():

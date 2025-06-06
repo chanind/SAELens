@@ -129,6 +129,8 @@ def handle_config_defaulting(cfg_dict: dict[str, Any]) -> dict[str, Any]:
     cfg_dict.setdefault("activation_fn_str", cfg_dict.get("activation_fn", "relu"))
     cfg_dict.setdefault("architecture", "standard")
     cfg_dict.setdefault("neuronpedia_id", None)
+    cfg_dict.setdefault("matching_pursuit_maxk", 100)
+    cfg_dict.setdefault("matching_pursuit_threshold", 5e-2)
 
     if "normalize_activations" in cfg_dict and isinstance(
         cfg_dict["normalize_activations"], bool
@@ -735,6 +737,8 @@ def get_deepseek_r1_config(
         "device": options.device,
         "apply_b_dec_to_input": False,
         "finetuning_scaling_factor": False,
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
 

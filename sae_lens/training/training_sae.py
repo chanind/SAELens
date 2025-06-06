@@ -163,6 +163,8 @@ class TrainingSAEConfig(SAEConfig):
             model_from_pretrained_kwargs=cfg.model_from_pretrained_kwargs or {},
             jumprelu_init_threshold=cfg.jumprelu_init_threshold,
             jumprelu_bandwidth=cfg.jumprelu_bandwidth,
+            matching_pursuit_maxk=cfg.matching_pursuit_maxk,
+            matching_pursuit_threshold=cfg.matching_pursuit_threshold,
         )
 
     @classmethod
@@ -229,6 +231,8 @@ class TrainingSAEConfig(SAEConfig):
             "dataset_path": self.dataset_path,
             "dataset_trust_remote_code": self.dataset_trust_remote_code,
             "sae_lens_training_version": self.sae_lens_training_version,
+            "matching_pursuit_maxk": self.matching_pursuit_maxk,
+            "matching_pursuit_threshold": self.matching_pursuit_threshold,
         }
 
 
@@ -250,6 +254,10 @@ class TrainingSAE(SAE):
 
         if cfg.architecture == "standard" or cfg.architecture == "topk":
             self.encode_with_hidden_pre_fn = self.encode_with_hidden_pre
+        elif cfg.architecture == "matching_pursuit":
+            self.encode_with_hidden_pre_fn = (
+                self.encode_with_hidden_pre_matching_pursuit
+            )
         elif cfg.architecture == "gated":
             self.encode_with_hidden_pre_fn = self.encode_with_hidden_pre_gated
         elif cfg.architecture == "jumprelu":
@@ -323,6 +331,73 @@ class TrainingSAE(SAE):
         feature_acts = JumpReLU.apply(hidden_pre, threshold, self.bandwidth)
 
         return feature_acts, hidden_pre  # type: ignore
+
+    def encode_with_hidden_pre_matching_pursuit(
+        self, x: Float[torch.Tensor, "... d_in"]
+    ) -> tuple[Float[torch.Tensor, "... d_sae"], Float[torch.Tensor, "... d_sae"]]:
+        original_shape = x.shape
+        if len(original_shape) == 3:
+            x = x.reshape(-1, original_shape[-1])
+
+        residual = self.process_sae_in(x)
+
+        z = self._encode_matching_pursuit_residual(
+            residual, max_iter=self.cfg.matching_pursuit_maxk
+        )
+
+        if len(original_shape) == 3:
+            z = z.reshape(original_shape[0], original_shape[1], -1)
+
+        # hidden_pre doesn't really make sense for a MP SAE, so just return the same thing
+        return z, z
+
+    def _encode_matching_pursuit_residual(
+        self,
+        residual: Float[torch.Tensor, "... d_in"],
+        max_iter: int | None = None,
+        exclude_latents_mask: Float[torch.Tensor, "... d_sae"] | None = None,
+    ) -> Float[torch.Tensor, "... d_sae"]:
+        batch_size = residual.shape[0]
+
+        z = torch.zeros(
+            batch_size, self.cfg.d_sae, device=self.W_dec.device, dtype=self.W_dec.dtype
+        )
+        prev_support = torch.zeros_like(z).bool()
+        done = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+
+        iter = 0
+        W_dec = self.W_dec
+        if exclude_latents_mask is not None:
+            # set the excluded latents to 0
+            W_dec = W_dec * exclude_latents_mask.unsqueeze(1)
+
+        while not done.all() and (max_iter is None or iter < max_iter):
+            # no grad here to reduce memory usage
+            with torch.no_grad():
+                WTr = residual @ W_dec.T
+                values, indices = torch.max(torch.relu(WTr), dim=1, keepdim=True)
+
+                z_ = torch.zeros_like(z)
+                z_.scatter_(1, indices, values.to(z_.dtype))
+                z = torch.where(done.unsqueeze(1), z, z + z_)
+
+            update = torch.matmul(z_, W_dec)
+            residual = torch.where(done.unsqueeze(1), residual, residual - update)
+
+            support = z != 0
+
+            # A sample is considered converged if:
+            # (1) the support set hasn't changed from the previous iteration (stability), or
+            # (2) the residual norm is below a given threshold (good enough reconstruction)
+            converged = (support == prev_support).all(dim=1) | (
+                residual.norm(dim=1) < self.cfg.matching_pursuit_threshold
+            )
+
+            done = done | converged
+            prev_support = support
+            iter += 1
+
+        return z
 
     def encode_with_hidden_pre(
         self, x: Float[torch.Tensor, "... d_in"]
@@ -425,6 +500,8 @@ class TrainingSAE(SAE):
             )
             losses["auxiliary_reconstruction_loss"] = topk_loss
             loss = mse_loss + topk_loss
+        elif self.cfg.architecture == "matching_pursuit":
+            loss = mse_loss
         else:
             # default SAE sparsity loss
             weighted_feature_acts = feature_acts

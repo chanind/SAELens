@@ -69,6 +69,8 @@ def test_get_sae_config_sae_lens():
         "normalize_activations": "none",
         "prepend_bos": True,
         "sae_lens_training_version": None,
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     assert cfg_dict == expected_cfg_dict
@@ -101,6 +103,8 @@ def test_get_sae_config_connor_rob_hook_z():
         "normalize_activations": "none",
         "dataset_trust_remote_code": True,
         "neuronpedia_id": "gpt2-small/0-att-kk",
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     assert cfg_dict == expected_cfg_dict
@@ -133,6 +137,8 @@ def test_get_sae_config_gemma_2():
         "normalize_activations": None,
         "device": "cpu",
         "neuronpedia_id": None,
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     assert cfg_dict == expected_cfg_dict
@@ -166,6 +172,8 @@ def test_get_sae_config_dictionary_learning_1():
         "context_size": 128,
         "normalize_activations": "none",
         "neuronpedia_id": "gemma-2-2b/12-sae_bench-topk-res-65k__trainer_0_step_final",
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     assert cfg_dict == expected_cfg_dict
@@ -214,6 +222,8 @@ def test_get_deepseek_r1_config():
         "device": "cpu",
         "apply_b_dec_to_input": False,
         "finetuning_scaling_factor": False,
+        "matching_pursuit_maxk": 100,
+        "matching_pursuit_threshold": 5e-2,
     }
 
     assert cfg == expected_cfg

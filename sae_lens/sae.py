@@ -39,7 +39,7 @@ T = TypeVar("T", bound="SAE")
 @dataclass
 class SAEConfig:
     # architecture details
-    architecture: Literal["standard", "gated", "jumprelu", "topk"]
+    architecture: Literal["standard", "gated", "jumprelu", "topk", "matching_pursuit"]
 
     # forward pass details.
     d_in: int
@@ -58,6 +58,10 @@ class SAEConfig:
     dataset_path: str
     dataset_trust_remote_code: bool
     normalize_activations: str
+
+    # matching pursuit parameters
+    matching_pursuit_maxk: int
+    matching_pursuit_threshold: float
 
     # misc
     dtype: str
@@ -117,6 +121,8 @@ class SAEConfig:
             "neuronpedia_id": self.neuronpedia_id,
             "model_from_pretrained_kwargs": self.model_from_pretrained_kwargs,
             "seqpos_slice": self.seqpos_slice,
+            "matching_pursuit_maxk": self.matching_pursuit_maxk,
+            "matching_pursuit_threshold": self.matching_pursuit_threshold,
         }
 
 
@@ -161,6 +167,9 @@ class SAE(HookedRootModule):
         if self.cfg.architecture == "standard" or self.cfg.architecture == "topk":
             self.initialize_weights_basic()
             self.encode = self.encode_standard
+        elif self.cfg.architecture == "matching_pursuit":
+            self.initialize_weights_matching_pursuit()
+            self.encode = self.encode_matching_pursuit
         elif self.cfg.architecture == "gated":
             self.initialize_weights_gated()
             self.encode = self.encode_gated
@@ -258,6 +267,30 @@ class SAE(HookedRootModule):
             torch.nn.init.kaiming_uniform_(
                 torch.empty(
                     self.cfg.d_in, self.cfg.d_sae, dtype=self.dtype, device=self.device
+                )
+            )
+        )
+
+        # methdods which change b_dec as a function of the dataset are implemented after init.
+        self.b_dec = nn.Parameter(
+            torch.zeros(self.cfg.d_in, dtype=self.dtype, device=self.device)
+        )
+
+        # scaling factor for fine-tuning (not to be used in initial training)
+        # TODO: Make this optional and not included with all SAEs by default (but maintain backwards compatibility)
+        if self.cfg.finetuning_scaling_factor:
+            self.finetuning_scaling_factor = nn.Parameter(
+                torch.ones(self.cfg.d_sae, dtype=self.dtype, device=self.device)
+            )
+
+    def initialize_weights_matching_pursuit(self):
+        # Matching pursuit has no encoder
+
+        # Start with the default init strategy:
+        self.W_dec = nn.Parameter(
+            torch.nn.init.kaiming_uniform_(
+                torch.empty(
+                    self.cfg.d_sae, self.cfg.d_in, dtype=self.dtype, device=self.device
                 )
             )
         )
@@ -435,6 +468,62 @@ class SAE(HookedRootModule):
         # "... d_in, d_in d_sae -> ... d_sae",
         hidden_pre = self.hook_sae_acts_pre(sae_in @ self.W_enc + self.b_enc)
         return self.hook_sae_acts_post(self.activation_fn(hidden_pre))
+
+    def encode_matching_pursuit(
+        self, x: Float[torch.Tensor, "... d_in"]
+    ) -> Float[torch.Tensor, "... d_sae"]:
+        """
+        Calculate SAE features from inputs
+        """
+
+        original_shape = x.shape
+        if len(original_shape) == 3:
+            x = x.reshape(-1, original_shape[-1])
+
+        residual = self.process_sae_in(x)
+
+        batch_size = residual.shape[0]
+
+        z = torch.zeros(
+            batch_size, self.cfg.d_sae, device=self.W_dec.device, dtype=self.W_dec.dtype
+        )
+        prev_support = torch.zeros_like(z).bool()
+        done = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+
+        iter = 0
+        W_dec = self.W_dec
+
+        while not done.all() and (
+            self.cfg.matching_pursuit_maxk is None
+            or iter < self.cfg.matching_pursuit_maxk
+        ):
+            WTr = residual @ W_dec.T
+            values, indices = torch.max(torch.relu(WTr), dim=1, keepdim=True)
+
+            z_ = torch.zeros_like(z)
+            z_.scatter_(1, indices, values.to(z_.dtype))
+            z = torch.where(done.unsqueeze(1), z, z + z_)
+
+            update = torch.matmul(z_, W_dec)
+            residual = torch.where(done.unsqueeze(1), residual, residual - update)
+
+            support = z != 0
+
+            # A sample is considered converged if:
+            # (1) the support set hasn't changed from the previous iteration (stability), or
+            # (2) the residual norm is below a given threshold (good enough reconstruction)
+            converged = (support == prev_support).all(dim=1) | (
+                residual.norm(dim=1) < self.cfg.matching_pursuit_threshold
+            )
+
+            done = done | converged
+            prev_support = support
+            iter += 1
+
+        if len(original_shape) == 3:
+            z = z.reshape(original_shape[0], original_shape[1], -1)
+
+        return z
 
     def process_sae_in(
         self, sae_in: Float[torch.Tensor, "... d_in"]

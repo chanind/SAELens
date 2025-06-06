@@ -704,7 +704,7 @@ def test_activations_store_buffer_shuffling(ts_model: HookedTransformer):
 
 
 @torch.no_grad()
-@pytest.skip(reason="Buffer is gone.")
+@pytest.mark.skip(reason="Buffer is gone.")
 def test_activations_store_storage_buffer_excludes_special_tokens(
     ts_model: HookedTransformer,
 ):
