@@ -552,6 +552,10 @@ class SAE(HookedRootModule):
 
     @torch.no_grad()
     def fold_W_dec_norm(self):
+        if self.cfg.architecture == "matching_pursuit":
+            # Matching pursuit doesn't have a W_enc, so we don't need to fold anything.
+            return
+
         W_dec_norms = self.W_dec.norm(dim=-1).unsqueeze(1)
         self.W_dec.data = self.W_dec.data / W_dec_norms
         self.W_enc.data = self.W_enc.data * W_dec_norms.T
