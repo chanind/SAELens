@@ -688,20 +688,21 @@ class TrainingSAE(SAE):
             )
             self.initialize_decoder_norm_constant_norm()
 
-        # Then we initialize the encoder weights (either as the transpose of decoder or not)
-        if self.cfg.init_encoder_as_decoder_transpose:
-            self.W_enc.data = self.W_dec.data.T.clone().contiguous()
-        else:
-            self.W_enc = nn.Parameter(
-                torch.nn.init.kaiming_uniform_(
-                    torch.empty(
-                        self.cfg.d_in,
-                        self.cfg.d_sae,
-                        dtype=self.dtype,
-                        device=self.device,
+        if self.cfg.architecture != "matching_pursuit":
+            # Then we initialize the encoder weights (either as the transpose of decoder or not)
+            if self.cfg.init_encoder_as_decoder_transpose:
+                self.W_enc.data = self.W_dec.data.T.clone().contiguous()
+            else:
+                self.W_enc = nn.Parameter(
+                    torch.nn.init.kaiming_uniform_(
+                        torch.empty(
+                            self.cfg.d_in,
+                            self.cfg.d_sae,
+                            dtype=self.dtype,
+                            device=self.device,
+                        )
                     )
                 )
-            )
 
         if self.cfg.normalize_sae_decoder:
             with torch.no_grad():
