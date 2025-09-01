@@ -193,6 +193,8 @@ class LanguageModelSAERunnerConfig:
     # JumpReLU Parameters
     jumprelu_init_threshold: float = 0.001
     jumprelu_bandwidth: float = 0.001
+    jumprelu_tanh_scale: float = 4.0
+    jumprelu_loss_mode: Literal["step", "tanh"] = "step"
 
     # Matching Pursuit Parameters
     matching_pursuit_maxk: int = 100
@@ -479,6 +481,8 @@ class LanguageModelSAERunnerConfig:
             "normalize_activations": self.normalize_activations,
             "jumprelu_init_threshold": self.jumprelu_init_threshold,
             "jumprelu_bandwidth": self.jumprelu_bandwidth,
+            "jumprelu_tanh_scale": self.jumprelu_tanh_scale,
+            "jumprelu_loss_mode": self.jumprelu_loss_mode,
             "scale_sparsity_penalty_by_decoder_norm": self.scale_sparsity_penalty_by_decoder_norm,
         }
 

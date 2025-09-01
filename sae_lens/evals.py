@@ -442,18 +442,23 @@ def get_sparsity_and_variance_metrics(
         else:
             original_act = cache[hook_name]
 
-        # normalise if necessary (necessary in training only, otherwise we should fold the scaling in)
-        if activation_store.normalize_activations == "expected_average_only_in":
-            original_act = activation_store.apply_norm_scaling_factor(original_act)
-
         flattened_sae_input = einops.rearrange(original_act, "b ctx d -> (b ctx) d")
         flattened_sae_input = flattened_sae_input[
             flattened_mask.to(flattened_sae_input.device)
         ]
 
+        # normalise if necessary (necessary in training only, otherwise we should fold the scaling in)
+        flattened_sae_input_scaled = flattened_sae_input
+        if activation_store.normalize_activations == "expected_average_only_in":
+            flattened_sae_input_scaled = activation_store.apply_norm_scaling_factor(
+                flattened_sae_input
+            )
+
         # send the (maybe normalised) activations into the SAE
-        sae_feature_activations = sae.encode(flattened_sae_input.to(sae.device))
-        sae_out = sae.decode(sae_feature_activations).to(flattened_sae_input.device)
+        sae_feature_activations = sae.encode(flattened_sae_input_scaled.to(sae.device))
+        sae_out = sae.decode(sae_feature_activations).to(
+            flattened_sae_input_scaled.device
+        )
         del cache
 
         if activation_store.normalize_activations == "expected_average_only_in":

@@ -206,6 +206,25 @@ def test_TrainingSAE_forward_includes_topk_loss_with_topk_architecture():
     assert train_step_output.losses["auxiliary_reconstruction_loss"] == 0.0
 
 
+def test_TrainingSAE_forward_works_with_jumprelu_in_tanh_mode():
+    cfg = build_sae_cfg(
+        d_in=3,
+        d_sae=4,
+        architecture="jumprelu",
+        normalize_sae_decoder=False,
+        jumprelu_loss_mode="tanh",
+        jumprelu_tanh_scale=2.0,
+    )
+    sae = TrainingSAE(TrainingSAEConfig.from_sae_runner_config(cfg))
+    x = torch.randn(32, 3)
+    train_step_output = sae.training_forward_pass(
+        sae_in=x,
+        current_l1_coefficient=2.0,
+        dead_neuron_mask=None,
+    )
+    train_step_output.loss.backward()
+
+
 def test_TrainingSAE_forward_includes_topk_loss_is_nonzero_if_dead_neurons_present():
     cfg = build_sae_cfg(
         d_in=3,

@@ -5,7 +5,7 @@ https://github.com/ArthurConmy/sae/blob/main/sae/model.py
 import json
 import os
 from dataclasses import dataclass, fields
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import einops
 import numpy as np
@@ -118,6 +118,8 @@ class TrainingSAEConfig(SAEConfig):
     mse_loss_normalization: Optional[str]
     jumprelu_init_threshold: float
     jumprelu_bandwidth: float
+    jumprelu_tanh_scale: float
+    jumprelu_loss_mode: Literal["step", "tanh"]
     decoder_heuristic_init: bool
     init_encoder_as_decoder_transpose: bool
     scale_sparsity_penalty_by_decoder_norm: bool
@@ -163,6 +165,8 @@ class TrainingSAEConfig(SAEConfig):
             model_from_pretrained_kwargs=cfg.model_from_pretrained_kwargs or {},
             jumprelu_init_threshold=cfg.jumprelu_init_threshold,
             jumprelu_bandwidth=cfg.jumprelu_bandwidth,
+            jumprelu_tanh_scale=cfg.jumprelu_tanh_scale,
+            jumprelu_loss_mode=cfg.jumprelu_loss_mode,
             matching_pursuit_maxk=cfg.matching_pursuit_maxk,
             matching_pursuit_threshold=cfg.matching_pursuit_threshold,
         )
@@ -206,6 +210,8 @@ class TrainingSAEConfig(SAEConfig):
             "normalize_activations": self.normalize_activations,
             "jumprelu_init_threshold": self.jumprelu_init_threshold,
             "jumprelu_bandwidth": self.jumprelu_bandwidth,
+            "jumprelu_tanh_scale": self.jumprelu_tanh_scale,
+            "jumprelu_loss_mode": self.jumprelu_loss_mode,
         }
 
     # this needs to exist so we can initialize the parent sae cfg without the training specific
@@ -487,8 +493,22 @@ class TrainingSAE(SAE):
             losses["l1_loss"] = l1_loss
         elif self.cfg.architecture == "jumprelu":
             threshold = torch.exp(self.log_threshold)
-            l0 = torch.sum(Step.apply(hidden_pre, threshold, self.bandwidth), dim=-1)  # type: ignore
-            l0_loss = (current_l1_coefficient * l0).mean()
+            if self.cfg.jumprelu_loss_mode == "step":
+                l0 = torch.sum(
+                    Step.apply(hidden_pre, threshold, self.bandwidth),  # type: ignore
+                    dim=-1,
+                )
+                l0_loss = (current_l1_coefficient * l0).mean()
+
+            elif self.cfg.jumprelu_loss_mode == "tanh":
+                per_item_l0_loss = torch.tanh(
+                    self.cfg.jumprelu_tanh_scale * feature_acts * self.W_dec.norm(dim=1)
+                ).sum(dim=-1)
+                l0_loss = (current_l1_coefficient * per_item_l0_loss).mean()
+            else:
+                raise ValueError(
+                    f"Unknown jumprelu loss mode: {self.cfg.jumprelu_loss_mode}"
+                )
             loss = mse_loss + l0_loss
             losses["l0_loss"] = l0_loss
         elif self.cfg.architecture == "topk":
