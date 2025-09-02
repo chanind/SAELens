@@ -203,6 +203,7 @@ class SAETrainer:
                 self.activations_store.estimated_norm_scaling_factor
             )
             self.activations_store.estimated_norm_scaling_factor = None
+            self.activations_store.normalize_activations = "none"
 
         # save final sae group to checkpoints folder
         self.save_checkpoint(

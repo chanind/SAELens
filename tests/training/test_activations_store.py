@@ -343,6 +343,8 @@ def test_activations_store_estimate_norm_scaling_factor(
     factor = store.estimate_norm_scaling_factor(n_batches_for_norm_estimate=10)
     assert isinstance(factor, float)
 
+    # need to set this so we can read activations from the buffer
+    store.estimated_norm_scaling_factor = 1.0
     scaled_norm = store.get_buffer(10)[0].norm(dim=-1).mean() * factor
     assert scaled_norm == pytest.approx(np.sqrt(store.d_in), abs=5)
 
@@ -871,3 +873,36 @@ def test_filter_buffer_acts_all_filtered():
 
     assert filtered.shape[0] == 0  # Empty tensor returned
     assert filtered.shape[1] == activations.shape[1]  # Feature dimension preserved
+
+
+@torch.no_grad()
+def test_activations_store_estimate_norm_scaling_factor_uses_full_batch(
+    ts_model: HookedTransformer,
+):
+    """Simulate a model where activation norms within a batch are far
+    apart, and confirm that the norm scaling factor is estimated from
+    the entire batch.
+
+    """
+    tokenizer = ts_model.tokenizer
+    assert tokenizer is not None
+    # Set the embedding of BOS to be very large, and attach the
+    # activations store to a hook that reads it.
+    ts_model.embed.W_E[tokenizer.bos_token_id, :] = 1e4  # type: ignore
+    cfg = build_sae_cfg(
+        context_size=6, train_batch_size_tokens=6, hook_name="hook_embed"
+    )
+    dataset = Dataset.from_list(
+        [
+            {"text": (tokenizer.bos_token + "a") * 10},  # type: ignore
+        ]
+    )
+    store = ActivationsStore.from_config(ts_model, cfg, override_dataset=dataset)
+    factor = store.estimate_norm_scaling_factor(n_batches_for_norm_estimate=1)
+    # The norm scaling factor should be greater than the factor if it
+    # were only estimated from the 'a' token, and less than if it were
+    # only estimated from bos.
+    mean_from_a = ts_model.embed(ts_model.to_single_token("a")).norm(dim=-1).item()
+    assert factor < np.sqrt(cfg.d_in) / mean_from_a
+    mean_from_bos = ts_model.embed(tokenizer.bos_token_id).norm(dim=-1).item()
+    assert factor > np.sqrt(cfg.d_in) / mean_from_bos
